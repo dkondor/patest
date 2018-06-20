@@ -37,7 +37,7 @@
 #include <stdint.h>
 #include <ctype.h>
 #include <sys/mman.h>
-#include <gsl/gsl_rng.h>
+//~ #include <gsl/gsl_rng.h>
 #include <limits.h>
 //~ #include "mt19937.h"
 
@@ -143,11 +143,13 @@ void edges_sort1(edges* e);
 //véletlen cserék
 //a->b, c->d helyett a->d, c->b
 //N darab csere
+/*
 void edges_rand1(edges* e, uint64_t N, gsl_rng* r);
 
 //véletlen cserék, a sikertelen próbálkozások is beleszámítanak a cserék számába
 //a->b, c->d helyett a->d, c->b
 void edges_rand2(edges* e, uint64_t N, gsl_rng* r);
+*/
 
 // create a "helper" for faster edge lookups: store the starting index for each addr, making it unnecessary to perform binary
 //	search for the whole set, and also return result in O(1) time for addresses with outdeg == 1
