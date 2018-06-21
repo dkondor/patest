@@ -50,6 +50,7 @@
 #include "red_black_tree2.h"
 #include "edgeheap.h"
 #include "popen_noshell.h"
+#include "read_table.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,38 +66,21 @@ typedef struct edgerecord_t { //egy bejegyzés az eléket tartalmazó fájlban
 } erecord;
 
 //egy új bejegyzés beolvasása (ha van még a fájlban)
-int erecord_read(FILE* f, erecord* r) {
-	if(!f) return -1; //ha már korábbana a fájl végére értünk
-	
-	//egy sort kell beolvasnunk, de lehetnek kommentek -- a nem számokkal kezdődő sorokat átugorjuk
-	int read = 0;
-	do {
-		int a = fgetc(f);
-		while(a == ' ' || a == '\t') a = fgetc(f);
-		if(a == EOF) return -1; //véget ért a fájl, vagy hiba, még mielőtt sikerült valamit beolvasni
-		if(a == '\n') continue;
-		if(!isdigit(a)) goto rr_endl; //nem számmal kezdődik ('-' jel sem lehet, az ID-k pozitívak)
+int erecord_read(read_table* f, erecord* r, int ignore_invalid) {
+	while(1) {
+		if(read_table_line(f)) return -1;
 		
-		ungetc(a,f);
-		unsigned int in;
-		unsigned int out;
-		unsigned int timestamp;
-		a = fscanf(f,"%u\t%u\t%u",&in,&out,&timestamp);
-		if(a == 3) {
-			read = 1;
-			r->in = in;
-			r->out = out;
-			r->timestamp = timestamp;
+		unsigned int in,out,timestamp;
+		if(read_table_uint32(f,&in) || read_table_uint32(f,&out)) {
+			if(ignore_invalid && read_table_get_last_error(f) == T_OVERFLOW) continue;
+			else return -1;
 		}
-rr_endl:
-		do {
-			a = fgetc(f);
-		} while( ! (a == '\n' || a == EOF) );
-		if(a == EOF) {
-			if(!read) return -1; //véget ért a fájl anélkül, hogy sikerült volna valamit beolvasni
-		}
-	} while(!read);
-	return 0; //ha ide jutottunk, akkor sikerült egy érvényes sort beolvasni
+		if(read_table_uint32(f,&timestamp)) return -1;
+		r->in = in;
+		r->out = out;
+		r->timestamp = timestamp;
+		return 0;
+	}
 }
 
 static char gzip0[] = "/usr/bin/zip";
@@ -216,9 +200,8 @@ int main(int argc, char **argv)
 	unsigned int N = 0; //id-k száma
 	char* fids = 0;
 	char* ftxedge = 0;
-	//~ char* ftxin = 0;
-	//~ char* ftxout = 0;
 	char* flinks = 0;
+	int ignore_invalid = 1; /* ignore "invalid" node IDs that cause overflow / underflow (-1 for unknown addresses typically) */
 	
 	char* fout2 = 0; //eredmények kiírása ide -> alapfájlnév, ebből generálás: %s-%f-n/a.gz
 	int foutn = 0; //új pontok (első kimenő él) kiírása külön
@@ -343,6 +326,9 @@ int main(int argc, char **argv)
 		case 'H':
 			edgehelper = 0;
 			break;
+		case 'I':
+			ignore_invalid = 0;
+			break;
 		default:
 			fprintf(stderr,"Ismeretlen paraméter: %s!\n",argv[i]);
 			break;
@@ -360,33 +346,14 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	
-/*	char* fntmp = 0;
-	if(zip) {
-		unsigned int l1 = strlen(fids);
-		unsigned int l2 = strlen(ftxedge);
-		if(l2 > l1) l1 = l2;
-		l2 = strlen(flinks);
-		if(l2 > l1) l1 = l2;
-		fntmp = (char*)malloc(sizeof(char)*(l1 + strlen(zcat) + 4));
-		if(!fntmp) {
-			fprintf(stderr,"Nem sikerült memóriát lefoglalni!\n");
-			return 2;
-		}
-	}
-*/	
 	FILE* fi = 0;
 	if(zip) {
 		char* cmd1[3] = {zcat,fids,0};
-		//~ sprintf(fntmp,"%s %s",zcat,fids);
-		//~ fi = popen(fntmp,"r");
 		fi = popen_noshell(zcat,cmd1,"r",&pc1,0);
 	}
 	else fi = fopen(fids,"r");
 	il = ids_read(fi,N);
-	if(zip) {
-		//~ pclose(fi);
-		pclose_noshell(&pc1);
-	}
+	if(zip) pclose_noshell(&pc1);
 	else fclose(fi);
 	if(!il) {
 		fprintf(stderr,"Nem sikerült azonosítókat beolvasni a(z) %s fájlból!\n",fids);
@@ -405,9 +372,7 @@ int main(int argc, char **argv)
 	FILE* links = 0;
 	
 	if(zip) {
-		//~ sprintf(fntmp,"%s %s",zcat,flinks);
 		char* cmd1[3] = {zcat,flinks,0};
-		//~ links = popen(fntmp,"r");
 		links = popen_noshell(zcat,cmd1,"r",&pc1,0);
 	}
 	else links = fopen(flinks,"r");
@@ -431,8 +396,6 @@ int main(int argc, char **argv)
 	if(edgehelper) edges_createhelper(ee,il);
 	
 	if(zip) {
-		//~ sprintf(fntmp,"%s %s",zcat,ftxedge);
-		//~ e = popen(fntmp,"r");
 		char* cmd1[3] = {zcat,ftxedge,0};
 		e = popen_noshell(zcat,cmd1,"r",&pc1,0);
 	}
@@ -444,6 +407,8 @@ int main(int argc, char **argv)
 		edges_free(ee);
 		return 5;
 	}
+	read_table* e_rt = read_table_new(e);
+	read_table_set_fn(e_rt,ftxedge);
 	
 	//kimeneti fájlok -- minden exponenshez külön fájl, tömörítve
 	FILE** out1 = (FILE**)malloc(sizeof(FILE*)*na);
@@ -469,7 +434,9 @@ int main(int argc, char **argv)
 		ids_free(il);
 		RBTreeDestroy(d1);
 		edges_free(ee);
-		fclose(e);
+		if(zip) pclose_noshell(&pc1);
+		else fclose(e);
+		read_table_free(e_rt);
 		if(out1) free(out1);
 		if(outn) free(outn);
 		if(buf2[0]) free(buf2[0]);
@@ -488,11 +455,10 @@ int main(int argc, char **argv)
 	
 	t3 = time(0);
 
-	//~ r = record_read(in,&rin);
-	//~ r = r | record_read(out,&rout);
-	r = erecord_read(e,&edge1);
+	r = erecord_read(e_rt,&edge1,ignore_invalid);
 	if(r != 0) {
 		fprintf(stderr,"Nem sikerült adatokat beolvasni a bemeneti fáljokból!\n");
+		read_table_write_error(e_rt,stderr);
 		r = 8;
 		goto pt6_end;
 	}
@@ -670,18 +636,20 @@ int main(int argc, char **argv)
 		}
 		
 		//új tranzakció beolvasása
-		r = erecord_read(e,&edge1);
+		r = erecord_read(e_rt,&edge1,ignore_invalid);
 	} while(r == 0);
+	
+	if(read_table_get_last_error(e_rt) != T_EOF) {
+		fprintf(stderr,"Nem sikerült adatokat beolvasni a bemeneti fáljokból!\n");
+		read_table_write_error(e_rt,stderr);
+		r = 8;
+	}
 	
 pt6_end:
 	
 	if(zip) pclose_noshell(&pc1);
 	else fclose(e);
-	//~ if(in) fclose(in);
-	//~ if(out) fclose(out);
-	//~ if(out2) fclose(out2);
-	
-	
+	read_table_free(e_rt);
 	outf_close(out1,outn,na,gzip,foutn,p1,pn);
 	free(out1);
 	free(outn);
