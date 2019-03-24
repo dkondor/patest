@@ -387,7 +387,7 @@ er_endl:
 		munmap(base,size2-size3);
 	}*/
 	
-	fprintf(stderr,"edges_read(): összesen %llu élt olvastam be\n",e->nedges);
+	fprintf(stderr,"edges_read(): összesen %lu élt olvastam be\n",e->nedges);
 	
 	return e;
 }

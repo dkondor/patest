@@ -641,25 +641,17 @@ rb_red_blk_node* RBExactQuery(const rb_red_blk_tree* tree, const void* q) {
 
 /* return the minimum (leftmost element) if there are multiple elements for the same key */
 rb_red_blk_node* RBExactQueryMin(const rb_red_blk_tree* tree, const void* q) {
-  rb_red_blk_node* x=tree->root->left;
-  rb_red_blk_node* nil=tree->nil;
+  rb_red_blk_node* x = tree->root->left;
+  rb_red_blk_node* nil = tree->nil;
+  rb_red_blk_node* ret = 0; /* candidate */
   int compVal;
-  if (x == nil) return(0);
-  compVal=tree->Compare(x->key,/*(int*)*/ q);
-  while(0 != compVal) {/*assignemnt*/
-    if (1 == compVal) { /* x->key > q */
-      x=x->left;
-    } else {
-      x=x->right;
-    }
-    if ( x == nil) return(0);
-    compVal=tree->Compare(x->key,/*(int*)*/ q);
+  while(x != nil) {
+    compVal = tree->Compare(x->key,q);
+    if(compVal == 0) ret = x;
+    if(compVal < 0) x = x->right;
+    else x = x->left;
   }
-  while(x->left != nil) {
-       if(tree->Compare(x->left->key, q) == 0) x = x->left;
-       else break;
-  }
-  return(x);
+  return ret;
 }
 
 
